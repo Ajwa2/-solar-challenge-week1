@@ -1,0 +1,7 @@
+# Add your project dependencies here
+# Example:
+# requests==2.31.0
+
+# Pin your tools if desired
+# black==24.3.0
+# pytest==7.5.0
