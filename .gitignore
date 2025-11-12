@@ -1,0 +1,42 @@
+.venv/
+venv/
+ENV/
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+.env
+.env.*
+.vscode/
+.idea/
+.DS_Store
+*.log
+
+# Ignore data folder and common data files
+data/
+*.csv
+*.sqlite3
+
+# Jupyter
+.ipynb_checkpoints/
+
+# VS Code workspace
+*.code-workspace
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Coverage
+htmlcov/
+.coverage
+.coverage.*
+
+# IDE / OS files
+Thumbs.db
+desktop.ini
