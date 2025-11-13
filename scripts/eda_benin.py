@@ -101,8 +101,12 @@ def main():
     plot_timeseries(df, ['GHI','DNI','DHI','Tamb'], args.outdir)
     correlation_heatmap(df, ['GHI','DNI','DHI','TModA','TModB','ModA','ModB','Tamb','RH','WS','WSgust'], args.outdir)
 
-    df.to_csv(args.output)
-    print('Wrote cleaned CSV to', args.output)
+    # ensure output directory exists
+    out_path = Path(args.output)
+    if out_path.parent and not out_path.parent.exists():
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out_path)
+    print('Wrote cleaned CSV to', str(out_path))
 
 
 if __name__ == '__main__':
