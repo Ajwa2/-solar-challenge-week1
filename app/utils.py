@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.express as px
 import numpy as np
 from scipy import stats
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
 
 
 def load_dataframe(src) -> pd.DataFrame:
@@ -76,3 +77,25 @@ def run_stat_tests(df: pd.DataFrame, metric: str) -> Dict[str, Optional[float]]:
     except Exception:
         pass
     return result
+
+
+def posthoc_tukey(df: pd.DataFrame, metric: str) -> pd.DataFrame:
+    """Run Tukey HSD pairwise comparisons across countries for given metric.
+
+    Returns a pandas DataFrame with columns: group1, group2, meandiff, p-adj, lower, upper, reject
+    """
+    if metric not in df.columns or 'country' not in df.columns:
+        return pd.DataFrame()
+    sub = df[[metric, 'country']].dropna()
+    if sub.empty:
+        return pd.DataFrame()
+    try:
+        tuk = pairwise_tukeyhsd(endog=sub[metric].values, groups=sub['country'].values, alpha=0.05)
+        # Extract results table
+        table = tuk._results_table.data
+        cols = table[0]
+        rows = table[1:]
+        result_df = pd.DataFrame(rows, columns=cols)
+        return result_df
+    except Exception:
+        return pd.DataFrame()

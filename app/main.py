@@ -13,6 +13,7 @@ def sidebar_controls(df):
     daytime_only = st.sidebar.checkbox('Daytime only (GHI > 0)', value=False)
     metric = st.sidebar.selectbox('Metric', options=['GHI', 'DNI', 'DHI'])
     date_range = None
+    load_demo = st.sidebar.button('Load demo data')
     if not df.empty and 'Timestamp' in df.columns:
         min_date = pd.to_datetime(df['Timestamp']).min()
         max_date = pd.to_datetime(df['Timestamp']).max()
@@ -50,6 +51,24 @@ def main():
             uploaded_df['country'] = st.text_input('Country name for uploaded file', value='Uploaded')
         combined = uploaded_df
 
+    # Load demo data if requested (sample CSVs included in repo)
+    if st.sidebar.button('Load demo data'):
+        demo_paths = {
+            'Benin': os.path.join('app','sample_data','benin_demo.csv'),
+            'SierraLeone': os.path.join('app','sample_data','sierraleone_demo.csv'),
+            'Togo': os.path.join('app','sample_data','togo_demo.csv'),
+        }
+        demo_dfs = []
+        for name, p in demo_paths.items():
+            if os.path.exists(p):
+                d = load_dataframe(p)
+                if not d.empty:
+                    d['country'] = name
+                    demo_dfs.append(d)
+        if demo_dfs:
+            combined = pd.concat(demo_dfs, axis=0, ignore_index=True)
+            st.success('Loaded demo data')
+
     # Apply filters
     if not combined.empty:
         df = combined.copy()
@@ -86,6 +105,17 @@ def main():
             results = run_stat_tests(df, metric)
             st.write('ANOVA F:', results['anova_f'], 'p:', results['anova_p'])
             st.write('Kruskal H:', results['kruskal_h'], 'p:', results['kruskal_p'])
+
+        # Post-hoc
+        if st.checkbox('Run post-hoc pairwise tests (Tukey HSD)'):
+            from app.utils import posthoc_tukey
+
+            ph = posthoc_tukey(df, metric)
+            if ph.empty:
+                st.info('No post-hoc results (metric/country missing or insufficient data)')
+            else:
+                st.subheader('Tukey HSD pairwise comparisons')
+                st.dataframe(ph)
 
     else:
         st.info('No data loaded. Place cleaned CSVs in `data/` or upload one via the sidebar.')
