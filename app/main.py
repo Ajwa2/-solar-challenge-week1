@@ -1,5 +1,12 @@
 import streamlit as st
-from app.utils import load_dataframe, summarize_metrics, boxplot_fig, timeseries_fig, run_stat_tests
+from app.utils import (
+    load_dataframe,
+    summarize_metrics,
+    boxplot_fig,
+    timeseries_fig,
+    run_stat_tests,
+    posthoc_tukey,
+)
 import os
 import pandas as pd
 
@@ -7,26 +14,7 @@ import pandas as pd
 st.set_page_config(page_title="Solar Comparison", layout="wide")
 
 
-def sidebar_controls(df):
-    st.sidebar.header('Data & filters')
-    upload = st.sidebar.file_uploader('Upload cleaned CSV (optional)', type=['csv'])
-    daytime_only = st.sidebar.checkbox('Daytime only (GHI > 0)', value=False)
-    metric = st.sidebar.selectbox('Metric', options=['GHI', 'DNI', 'DHI'])
-    date_range = None
-    load_demo = st.sidebar.button('Load demo data')
-    if not df.empty and 'Timestamp' in df.columns:
-        min_date = pd.to_datetime(df['Timestamp']).min()
-        max_date = pd.to_datetime(df['Timestamp']).max()
-        date_range = st.sidebar.date_input('Date range', value=(min_date.date(), max_date.date()))
-    st.sidebar.markdown('---')
-    return upload, daytime_only, metric, date_range
-
-
-def main():
-    st.title('Cross-country Solar Radiation Comparison')
-    st.markdown('This app compares cleaned datasets (GHI/DNI/DHI) across countries.')
-
-    # Try loading default cleaned files if present
+def load_defaults():
     default_paths = {
         'Benin': os.path.join('data', 'benin_clean.csv'),
         'SierraLeone': os.path.join('data', 'sierraleone_clean.csv'),
@@ -39,24 +27,41 @@ def main():
             if not df.empty:
                 df['country'] = name
                 dfs.append(df)
+    return pd.concat(dfs, axis=0, ignore_index=True) if dfs else pd.DataFrame()
 
-    combined = pd.concat(dfs, axis=0, ignore_index=True) if dfs else pd.DataFrame()
 
-    upload, daytime_only, metric, date_range = sidebar_controls(combined)
+def sidebar(df):
+    st.sidebar.header('Controls')
+    upload = st.sidebar.file_uploader('Upload cleaned CSV (optional)', type=['csv'])
+    metric = st.sidebar.selectbox('Metric', options=['GHI', 'DNI', 'DHI'])
+    daytime = st.sidebar.checkbox('Daytime only (GHI > 0)', value=False)
+    top_n = st.sidebar.slider('Top N countries (by mean metric)', min_value=1, max_value=10, value=3)
+    st.sidebar.markdown('---')
+    demo = st.sidebar.button('Load demo data')
+    return upload, metric, daytime, top_n, demo
 
-    # If user uploaded a file, replace combined with uploaded content
+
+def main():
+    st.title('Cross-country Solar Dashboard')
+    st.write('Interactive dashboard for comparing GHI/DNI/DHI across countries.')
+
+    combined = load_defaults()
+
+    upload, metric, daytime, top_n, demo = sidebar(combined)
+
+    # handle upload
     if upload is not None:
-        uploaded_df = load_dataframe(upload)
-        if 'country' not in uploaded_df.columns:
-            uploaded_df['country'] = st.text_input('Country name for uploaded file', value='Uploaded')
-        combined = uploaded_df
+        uploaded = load_dataframe(upload)
+        if 'country' not in uploaded.columns:
+            uploaded['country'] = st.text_input('Country name for uploaded file', value='Uploaded')
+        combined = uploaded
 
-    # Load demo data if requested (sample CSVs included in repo)
-    if st.sidebar.button('Load demo data'):
+    # demo data
+    if demo:
         demo_paths = {
-            'Benin': os.path.join('app','sample_data','benin_demo.csv'),
-            'SierraLeone': os.path.join('app','sample_data','sierraleone_demo.csv'),
-            'Togo': os.path.join('app','sample_data','togo_demo.csv'),
+            'Benin': os.path.join('app', 'sample_data', 'benin_demo.csv'),
+            'SierraLeone': os.path.join('app', 'sample_data', 'sierraleone_demo.csv'),
+            'Togo': os.path.join('app', 'sample_data', 'togo_demo.csv'),
         }
         demo_dfs = []
         for name, p in demo_paths.items():
@@ -67,58 +72,68 @@ def main():
                     demo_dfs.append(d)
         if demo_dfs:
             combined = pd.concat(demo_dfs, axis=0, ignore_index=True)
-            st.success('Loaded demo data')
+            st.success('Demo data loaded')
 
-    # Apply filters
-    if not combined.empty:
-        df = combined.copy()
-        if date_range:
-            start, end = pd.to_datetime(date_range[0]), pd.to_datetime(date_range[1])
-            df = df[(pd.to_datetime(df['Timestamp']) >= start) & (pd.to_datetime(df['Timestamp']) <= end)]
-        if daytime_only and 'GHI' in df.columns:
-            df = df[df['GHI'] > 0]
+    if combined.empty:
+        st.info('No data loaded. Place cleaned CSVs in `data/` or upload one via the sidebar.')
+        return
 
-        st.subheader('Summary statistics')
-        summary = summarize_metrics(df, ['GHI', 'DNI', 'DHI'])
-        if summary.empty:
-            st.info('No GHI/DNI/DHI columns found in the data.')
-        else:
-            st.dataframe(summary)
+    # country selector
+    countries = sorted(combined['country'].dropna().unique().tolist())
+    selected = st.multiselect('Select countries', options=countries, default=countries)
+    if not selected:
+        st.warning('Select at least one country to display')
+        return
 
-        # Visuals
-        st.subheader('Boxplot')
+    df = combined[combined['country'].isin(selected)].copy()
+    if daytime and 'GHI' in df.columns:
+        df = df[df['GHI'] > 0]
+
+    # Summary
+    st.subheader('Summary table')
+    summary = summarize_metrics(df, ['GHI', 'DNI', 'DHI'])
+    if summary.empty:
+        st.info('No metrics found')
+    else:
+        st.dataframe(summary)
+
+    # Visuals
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        st.subheader(f'{metric} boxplot')
         fig = boxplot_fig(df, metric)
         if fig is not None:
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info(f'{metric} not available in dataset')
+            st.info(f'{metric} missing')
 
-        st.subheader('Time series')
-        tfig = timeseries_fig(df, metric)
-        if tfig is not None:
-            st.plotly_chart(tfig, use_container_width=True)
+    with col2:
+        st.subheader('Top countries by mean metric')
+        if metric in df.columns:
+            ranking = df.groupby('country')[metric].mean().sort_values(ascending=False).head(top_n).round(2)
+            st.table(ranking.reset_index().rename(columns={metric: f'mean_{metric}'}))
         else:
-            st.info('Timestamp or metric missing for timeseries')
+            st.info(f'{metric} missing')
 
-        # Statistical tests
-        if st.button('Run statistical tests (ANOVA & Kruskal-Wallis)'):
-            results = run_stat_tests(df, metric)
-            st.write('ANOVA F:', results['anova_f'], 'p:', results['anova_p'])
-            st.write('Kruskal H:', results['kruskal_h'], 'p:', results['kruskal_p'])
+    # Time series
+    st.subheader('Time series')
+    tfig = timeseries_fig(df, metric)
+    if tfig is not None:
+        st.plotly_chart(tfig, use_container_width=True)
 
-        # Post-hoc
-        if st.checkbox('Run post-hoc pairwise tests (Tukey HSD)'):
-            from app.utils import posthoc_tukey
+    # Statistical tests and post-hoc
+    if st.button('Run statistical tests (ANOVA & Kruskal-Wallis)'):
+        res = run_stat_tests(df, metric)
+        st.write('ANOVA F:', res['anova_f'], 'p:', res['anova_p'])
+        st.write('Kruskal H:', res['kruskal_h'], 'p:', res['kruskal_p'])
 
-            ph = posthoc_tukey(df, metric)
-            if ph.empty:
-                st.info('No post-hoc results (metric/country missing or insufficient data)')
-            else:
-                st.subheader('Tukey HSD pairwise comparisons')
-                st.dataframe(ph)
-
-    else:
-        st.info('No data loaded. Place cleaned CSVs in `data/` or upload one via the sidebar.')
+    if st.checkbox('Run post-hoc pairwise tests (Tukey HSD)'):
+        ph = posthoc_tukey(df, metric)
+        if ph.empty:
+            st.info('No post-hoc results (insufficient data or missing metric)')
+        else:
+            st.subheader('Tukey HSD results')
+            st.dataframe(ph)
 
 
 if __name__ == '__main__':
