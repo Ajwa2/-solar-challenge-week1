@@ -6,3 +6,10 @@
 # black==24.3.0
 # pinned pytest for CI
 pytest
+# Data & EDA
+pandas
+numpy
+matplotlib
+seaborn
+scipy
+plotly
