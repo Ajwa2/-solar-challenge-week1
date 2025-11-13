@@ -13,3 +13,4 @@ matplotlib
 seaborn
 scipy
 plotly
+streamlit
